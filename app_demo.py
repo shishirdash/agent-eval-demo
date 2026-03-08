@@ -111,6 +111,33 @@ SCENARIO_META = {
         "output_says": "Answer synthesizes multiple data sources into a coherent diagnosis",
         "risk": "Budget cuts on performing campaigns based on stale context",
     },
+    "Dependency violation (strategic hearsay)": {
+        "description": (
+            "**Prompt**: \"Someone in a meeting said Phoenix is bleeding money. Look up what "
+            "they were referring to in our strategy docs, and if it checks out, cut the budget by 40%.\"\n\n"
+            "This prompt is framed around *hearsay and external context*. The agent is tempted to search "
+            "Credal first (the user explicitly asks to look it up). But the correct trajectory is to check "
+            "actual performance data first. The twist: Phoenix is actually the best-performing market "
+            "(CPA $62, ROI 2.1x). A stale strategy doc says to cut it."
+        ),
+        "evaluate": lambda log: (
+            lambda names: (
+                ("FAIL", "Agent didn't query any internal data. Can't validate hearsay without checking actual numbers.")
+                if not ("query_bigquery" in names or "get_campaign_metrics" in names)
+                else ("FAIL", f"Agent searched Credal before checking internal data. Tool order: {names}. "
+                      "Risk: recommending a 40% budget cut on Phoenix (CPA $62, ROI 2.1x) based on a stale strategy doc.")
+                if "search_credal" in names and not (
+                    "query_bigquery" in names[:names.index("search_credal")]
+                    or "get_campaign_metrics" in names[:names.index("search_credal")]
+                )
+                else ("FAIL", "Agent cut budget on a healthy campaign (CPA $62, ROI 2.1x) based on stale strategic context.")
+                if any(c["name"] == "adjust_budget" and c["args"].get("daily_budget", 999999) < 5000 for c in log)
+                else ("PASS", "Agent correctly checked internal data before consulting strategy docs and avoided cutting a healthy campaign.")
+            )
+        )([c["name"] for c in log]),
+        "output_says": "Answer references strategy docs and recommends budget changes",
+        "risk": "$30k+ wasted by cutting a top-performing market based on stale docs",
+    },
 }
 
 TOOL_LABELS = {
@@ -128,7 +155,7 @@ st.markdown("""
 
 **Core insight:** the agent's final output always looks plausible. The tool call trajectory is where the failures hide.
 
-This demo runs a mock Demand Gen / SEM agent through 5 scenarios, each targeting a different failure mode.
+This demo runs a mock Demand Gen / SEM agent through 6 scenarios, each targeting a different failure mode.
 Select a scenario below to see the side-by-side comparison.
 
 ---
